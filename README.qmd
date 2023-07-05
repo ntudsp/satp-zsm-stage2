@@ -1,14 +1,19 @@
 ---
-title: "Replication code for: \"Crossing the Linguistic Causeway: Ethno-national Differences on Soundscape Attributes in Bahasa Melayu\""
 format: gfm
 editor: visual
 prefer-html: true
 ---
 
+# Replication code for "Crossing the Linguistic Causeway: Ethno-national Differences on Soundscape Attributes in Bahasa Melayu"
+
 ## Setup Environment
 
 ```{r setup}
 #| message: false
+#| echo: false
+
+#session
+library(pander)
 
 #data
 library(dataverse)
@@ -44,7 +49,12 @@ source("helper.R") #load helper functions
 
 #Set dataverse server
 Sys.setenv("DATAVERSE_SERVER" = "https://researchdata.ntu.edu.sg")
+```
 
+```{r session}
+#| echo: false
+
+pander(sessionInfo())
 ```
 
 ## Data Loading and Preparation
@@ -1086,7 +1096,7 @@ ggsave(paste0("./outputs/PCAprojections_araus.pdf"),
 
 ```{r rthorr}
 
-#RTHORR test
+# #RTHORR test
 res.rthorr<-RTHORR::randmf_from_df(
         df_list = list(cor(data.satp.zsm2.l$data.subj.zsm2 %>%
                                    dplyr::filter(ETHNICITY=="MY:M") %>%
@@ -1219,11 +1229,11 @@ ssm.circE.all<-rbind(
               circE.SG.ea$RMSEA, circE.ARAUS.ea$RMSEA),
         cbind(circE.MYM.ea$SRMR, circE.MYO.ea$SRMR,
               circE.SG.ea$SRMR, circE.ARAUS.ea$SRMR),
-        cbind(circE.MYM.ec$CFI, circE.MYO.ec$CFI, 
+        cbind(circE.MYM.ec$CFI, circE.MYO.ec$CFI,
               circE.SG.ec$CFI, circE.ARAUS.ec$CFI),
         cbind(circE.MYM.ec$RMSEA, circE.MYO.ec$RMSEA,
               circE.SG.ec$RMSEA, circE.ARAUS.ec$RMSEA),
-        cbind(circE.MYM.ec$SRMR, circE.MYO.ec$SRMR, 
+        cbind(circE.MYM.ec$SRMR, circE.MYO.ec$SRMR,
               circE.SG.ec$SRMR, circE.ARAUS.ec$SRMR),
         cbind(circE.MYM.eca$CFI, circE.MYO.eca$CFI,
               circE.SG.eca$CFI, circE.ARAUS.eca$CFI),
@@ -1241,8 +1251,8 @@ ssm.circE.all<-rbind(
                        "CFIec","RMSEAec","SRMRec",
                        "CFIeca","RMSEAeca","SRMReca",
                        "SSM"))
-        
-models.table.new <- ci.rthorr %>% 
+
+models.table.new <- ci.rthorr %>%
         dplyr::mutate(CIp=paste0(round(CI,3)," (",round(p,3),")")) %>%
         dplyr::select(CIp,ETHNICITY) %>%
         pivot_wider(names_from = ETHNICITY,values_from = CIp) %>%
