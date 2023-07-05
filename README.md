@@ -1,47 +1,62 @@
-# SATP zsm Stage 2
 
 <script src="README_files/libs/kePrint-0.0.1/kePrint.js"></script>
 <link href="README_files/libs/lightable-0.0.1/lightable.css" rel="stylesheet" />
 
 
+# Replication code for “Crossing the Linguistic Causeway: Ethno-national Differences on Soundscape Attributes in Bahasa Melayu”
+
 ## Setup Environment
 
-``` r
-#data
-library(dataverse)
-library(tidyverse)
-library(janitor)
-library(plyr)
-library(reshape2)
-library(readxl)
-library(ggfortify)
+**R version 4.1.1 (2021-08-10)**
 
-#stats
-library(psych)
-library(rstatix)
-library(conover.test)
-library(fmsb)
-library(muStat)
+**Platform:** aarch64-apple-darwin20 (64-bit)
 
-#plots/tables
-library(ggsignif)
-library(ggbrace)
-library(kableExtra)
-library(factoextra)
-library(ggforce)
-library(ggExtra)
-library(ggthemes)
+**locale:**
+en_US.UTF-8\|\|en_US.UTF-8\|\|en_US.UTF-8\|\|C\|\|en_US.UTF-8\|\|en_US.UTF-8
 
-#circumplex
-library(RTHORR)
-library(circumplex)
-library(CircE)
+**attached base packages:** *stats*, *graphics*, *grDevices*, *utils*,
+*datasets*, *methods* and *base*
 
-source("helper.R") #load helper functions
+**other attached packages:** *CircE(v.1.1)*, *circumplex(v.0.3.8)*,
+*RTHORR(v.0.1.2)*, *gdata(v.2.18.0)*, *ggthemes(v.4.2.4)*,
+*ggExtra(v.0.10.0)*, *ggforce(v.0.4.1)*, *factoextra(v.1.0.7)*,
+*kableExtra(v.1.3.4)*, *ggbrace(v.0.1.0)*, *ggsignif(v.0.6.3)*,
+*muStat(v.1.7.0)*, *fmsb(v.0.7.1)*, *conover.test(v.1.1.5)*,
+*rstatix(v.0.7.0)*, *psych(v.2.1.6)*, *ggfortify(v.0.4.14)*,
+*readxl(v.1.4.2)*, *reshape2(v.1.4.4)*, *plyr(v.1.8.7)*,
+*janitor(v.2.1.0)*, *lubridate(v.1.9.2)*, *forcats(v.1.0.0)*,
+*stringr(v.1.5.0)*, *dplyr(v.1.1.1)*, *purrr(v.1.0.1)*,
+*readr(v.2.1.4)*, *tidyr(v.1.3.0)*, *tibble(v.3.2.1)*,
+*ggplot2(v.3.4.2)*, *tidyverse(v.2.0.0)*, *dataverse(v.0.3.10)* and
+*pander(v.0.6.5)*
 
-#Set dataverse server
-Sys.setenv("DATAVERSE_SERVER" = "https://researchdata.ntu.edu.sg")
-```
+**loaded via a namespace (and not attached):** *colorspace(v.2.0-3)*,
+*ellipsis(v.0.3.2)*, *rio(v.0.5.27)*, *snakecase(v.0.11.0)*,
+*rstudioapi(v.0.14)*, *farver(v.2.1.1)*, *ggrepel(v.0.9.1)*,
+*fansi(v.1.0.3)*, *xml2(v.1.3.4)*, *mnormt(v.2.0.2)*, *knitr(v.1.39)*,
+*polyclip(v.1.10-0)*, *jsonlite(v.1.8.4)*, *broom(v.1.0.4)*,
+*shiny(v.1.7.4)*, *compiler(v.4.1.1)*, *httr(v.1.4.5)*,
+*backports(v.1.4.1)*, *assertthat(v.0.2.1)*, *fastmap(v.1.1.0)*,
+*cli(v.3.6.1)*, *later(v.1.3.0)*, *tweenr(v.1.0.2)*,
+*htmltools(v.0.5.5)*, *tools(v.4.1.1)*, *gtable(v.0.3.0)*,
+*glue(v.1.6.2)*, *Rcpp(v.1.0.9)*, *carData(v.3.0-4)*,
+*cellranger(v.1.1.0)*, *vctrs(v.0.6.3)*, *svglite(v.2.1.0)*,
+*nlme(v.3.1-152)*, *xfun(v.0.31)*, *openxlsx(v.4.2.4)*,
+*rvest(v.1.0.3)*, *timechange(v.0.2.0)*, *mime(v.0.12)*,
+*miniUI(v.0.1.1.1)*, *lifecycle(v.1.0.3)*, *gtools(v.3.9.2)*,
+*MASS(v.7.3-54)*, *scales(v.1.2.0)*, *hms(v.1.1.3)*,
+*promises(v.1.2.0.1)*, *parallel(v.4.1.1)*, *yaml(v.2.3.5)*,
+*curl(v.4.3.2)*, *gridExtra(v.2.3)*, *stringi(v.1.7.8)*,
+*permute(v.0.9-7)*, *zip(v.2.2.0)*, *rlang(v.1.1.1)*,
+*pkgconfig(v.2.0.3)*, *systemfonts(v.1.0.4)*, *evaluate(v.0.15)*,
+*lattice(v.0.20-44)*, *tidyselect(v.1.2.0)*, *magrittr(v.2.0.3)*,
+*R6(v.2.5.1)*, *generics(v.0.1.2)*, *DBI(v.1.1.1)*, *pillar(v.1.9.0)*,
+*haven(v.2.5.2)*, *foreign(v.0.8-81)*, *withr(v.2.5.0)*,
+*abind(v.1.4-5)*, *car(v.3.0-11)*, *utf8(v.1.2.2)*, *tmvnsim(v.1.0-2)*,
+*tzdb(v.0.3.0)*, *rmarkdown(v.2.14)*, *grid(v.4.1.1)*,
+*data.table(v.1.14.8)*, *digest(v.0.6.29)*, *webshot(v.0.5.3)*,
+*xtable(v.1.8-4)*, *httpuv(v.1.6.5)*, *munsell(v.0.5.0)* and
+*viridisLite(v.0.4.0)*
 
 ## Data Loading and Preparation
 
@@ -2368,7 +2383,7 @@ ggsave(paste0("./outputs/PCAprojections_araus.pdf"),
 ### RTHORR
 
 ``` r
-#RTHORR test
+# #RTHORR test
 res.rthorr<-RTHORR::randmf_from_df(
         df_list = list(cor(data.satp.zsm2.l$data.subj.zsm2 %>%
                                    dplyr::filter(ETHNICITY=="MY:M") %>%
@@ -2429,7 +2444,7 @@ circE.MYM.ea=CircE.BFGS(data.merged.mym.cor,
                  m=2,N=n.participsnts.MY.M,r=1, equal.ang = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:14 2023 
+    Date: Wed Jul  5 14:09:39 2023 
     Data: Circumplex Estimation 
     Model:Equal spacing 
     Reference variable at 0 degree: eventful 
@@ -2839,7 +2854,7 @@ circE.MYM.ea=CircE.BFGS(data.merged.mym.cor,
                            b 0    b 1    b 2
     Estimates of Betas: 0.0423 0.9431 0.0146
     ----------------------------------------------------
-     CPU Time for optimization 0.559 sec. ( 0 min.)
+     CPU Time for optimization 0.51 sec. ( 0 min.)
                                    
                                    
 
@@ -2849,7 +2864,7 @@ circE.MYO.ea=CircE.BFGS(data.merged.myo.cor,
                  m=2,N=n.participsnts.MY.O,r=1, equal.ang = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:14 2023 
+    Date: Wed Jul  5 14:09:40 2023 
     Data: Circumplex Estimation 
     Model:Equal spacing 
     Reference variable at 0 degree: eventful 
@@ -3141,7 +3156,7 @@ circE.MYO.ea=CircE.BFGS(data.merged.myo.cor,
                            b 0    b 1 b 2
     Estimates of Betas: 0.0323 0.9677   0
     ----------------------------------------------------
-     CPU Time for optimization 0.241 sec. ( 0 min.)
+     CPU Time for optimization 0.237 sec. ( 0 min.)
                                    
                                    
 
@@ -3151,7 +3166,7 @@ circE.SG.ea=CircE.BFGS(data.merged.sg.cor,
                  m=2,N=n.participsnts.SG,r=1, equal.ang = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:15 2023 
+    Date: Wed Jul  5 14:09:40 2023 
     Data: Circumplex Estimation 
     Model:Equal spacing 
     Reference variable at 0 degree: eventful 
@@ -3447,7 +3462,7 @@ circE.SG.ea=CircE.BFGS(data.merged.sg.cor,
                           b 0    b 1    b 2
     Estimates of Betas: 0.074 0.8464 0.0796
     ----------------------------------------------------
-     CPU Time for optimization 0.261 sec. ( 0 min.)
+     CPU Time for optimization 0.246 sec. ( 0 min.)
                                    
                                    
 
@@ -3457,7 +3472,7 @@ circE.ARAUS.ea=CircE.BFGS(data.araus.cor,
                  m=2,N=29,r=1, equal.ang = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:15 2023 
+    Date: Wed Jul  5 14:09:40 2023 
     Data: Circumplex Estimation 
     Model:Equal spacing 
     Reference variable at 0 degree: eventful 
@@ -3697,7 +3712,7 @@ circE.MYM.q=CircE.BFGS(data.merged.mym.cor,
                  m=2,N=n.participsnts.MY.M,r=1)
 ```
 
-    Date: Wed Jul  5 01:01:15 2023 
+    Date: Wed Jul  5 14:09:41 2023 
     Data: Circumplex Estimation 
     Model:Unconstrained model 
     Reference variable at 0 degree: eventful 
@@ -3914,7 +3929,7 @@ circE.MYM.q=CircE.BFGS(data.merged.mym.cor,
                            b 0    b 1    b 2
     Estimates of Betas: 0.0372 0.9379 0.0249
     ----------------------------------------------------
-     CPU Time for optimization 0.147 sec. ( 0 min.)
+     CPU Time for optimization 0.139 sec. ( 0 min.)
                                    
                                    
 
@@ -3924,7 +3939,7 @@ circE.MYO.q=CircE.BFGS(data.merged.myo.cor,
                  m=2,N=n.participsnts.MY.O,r=1)
 ```
 
-    Date: Wed Jul  5 01:01:16 2023 
+    Date: Wed Jul  5 14:09:41 2023 
     Data: Circumplex Estimation 
     Model:Unconstrained model 
     Reference variable at 0 degree: eventful 
@@ -4168,7 +4183,7 @@ circE.MYO.q=CircE.BFGS(data.merged.myo.cor,
                            b 0    b 1    b 2
     Estimates of Betas: 0.0529 0.9284 0.0187
     ----------------------------------------------------
-     CPU Time for optimization 0.213 sec. ( 0 min.)
+     CPU Time for optimization 0.207 sec. ( 0 min.)
                                    
                                    
 
@@ -4178,7 +4193,7 @@ circE.SG.q=CircE.BFGS(data.merged.sg.cor,
                  m=2,N=n.participsnts.SG,r=1)
 ```
 
-    Date: Wed Jul  5 01:01:16 2023 
+    Date: Wed Jul  5 14:09:41 2023 
     Data: Circumplex Estimation 
     Model:Unconstrained model 
     Reference variable at 0 degree: eventful 
@@ -4422,7 +4437,7 @@ circE.SG.q=CircE.BFGS(data.merged.sg.cor,
                            b 0    b 1    b 2
     Estimates of Betas: 0.0369 0.9428 0.0203
     ----------------------------------------------------
-     CPU Time for optimization 0.225 sec. ( 0 min.)
+     CPU Time for optimization 0.21 sec. ( 0 min.)
                                    
                                    
 
@@ -4432,7 +4447,7 @@ circE.ARAUS.q=CircE.BFGS(data.araus.cor,
                  m=2,N=29,r=1)
 ```
 
-    Date: Wed Jul  5 01:01:16 2023 
+    Date: Wed Jul  5 14:09:42 2023 
     Data: Circumplex Estimation 
     Model:Unconstrained model 
     Reference variable at 0 degree: eventful 
@@ -4650,7 +4665,7 @@ circE.ARAUS.q=CircE.BFGS(data.araus.cor,
                            b 0    b 1    b 2
     Estimates of Betas: 0.0141 0.9647 0.0212
     ----------------------------------------------------
-     CPU Time for optimization 0.152 sec. ( 0 min.)
+     CPU Time for optimization 0.144 sec. ( 0 min.)
                                    
                                    
 
@@ -4661,7 +4676,7 @@ circE.MYM.ec=CircE.BFGS(data.merged.mym.cor,
                  m=2,N=n.participsnts.MY.M,r=1,equal.com = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:17 2023 
+    Date: Wed Jul  5 14:09:42 2023 
     Data: Circumplex Estimation 
     Model:Equal radius 
     Reference variable at 0 degree: eventful 
@@ -4847,7 +4862,7 @@ circE.MYM.ec=CircE.BFGS(data.merged.mym.cor,
                            b 0    b 1    b 2
     Estimates of Betas: 0.0414 0.9224 0.0363
     ----------------------------------------------------
-     CPU Time for optimization 0.094 sec. ( 0 min.)
+     CPU Time for optimization 0.098 sec. ( 0 min.)
                                    
                                    
 
@@ -4857,7 +4872,7 @@ circE.MYO.ec=CircE.BFGS(data.merged.myo.cor,
                  m=2,N=n.participsnts.MY.O,r=1,equal.com = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:17 2023 
+    Date: Wed Jul  5 14:09:42 2023 
     Data: Circumplex Estimation 
     Model:Equal radius 
     Reference variable at 0 degree: eventful 
@@ -5036,7 +5051,7 @@ circE.MYO.ec=CircE.BFGS(data.merged.myo.cor,
                            b 0    b 1    b 2
     Estimates of Betas: 0.0534 0.9443 0.0023
     ----------------------------------------------------
-     CPU Time for optimization 0.082 sec. ( 0 min.)
+     CPU Time for optimization 0.079 sec. ( 0 min.)
                                    
                                    
 
@@ -5046,7 +5061,7 @@ circE.SG.ec=CircE.BFGS(data.merged.sg.cor,
                  m=2,N=n.participsnts.SG,r=1,equal.com = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:17 2023 
+    Date: Wed Jul  5 14:09:42 2023 
     Data: Circumplex Estimation 
     Model:Equal radius 
     Reference variable at 0 degree: eventful 
@@ -5231,7 +5246,7 @@ circE.SG.ec=CircE.BFGS(data.merged.sg.cor,
                           b 0    b 1    b 2
     Estimates of Betas: 0.029 0.9662 0.0048
     ----------------------------------------------------
-     CPU Time for optimization 0.094 sec. ( 0 min.)
+     CPU Time for optimization 0.092 sec. ( 0 min.)
                                    
                                    
 
@@ -5241,7 +5256,7 @@ circE.ARAUS.ec=CircE.BFGS(data.araus.cor,
                  m=2,N=29,r=1,equal.com = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:17 2023 
+    Date: Wed Jul  5 14:09:42 2023 
     Data: Circumplex Estimation 
     Model:Equal radius 
     Reference variable at 0 degree: eventful 
@@ -5418,7 +5433,7 @@ circE.ARAUS.ec=CircE.BFGS(data.araus.cor,
                            b 0    b 1   b 2
     Estimates of Betas: 0.0166 0.9714 0.012
     ----------------------------------------------------
-     CPU Time for optimization 0.074 sec. ( 0 min.)
+     CPU Time for optimization 0.071 sec. ( 0 min.)
                                    
                                    
 
@@ -5430,7 +5445,7 @@ circE.MYM.eca=CircE.BFGS(data.merged.mym.cor,
                  equal.com = TRUE, equal.ang = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:17 2023 
+    Date: Wed Jul  5 14:09:43 2023 
     Data: Circumplex Estimation 
     Model:Constrained model: equal spacing and equal radius 
     Reference variable at 0 degree: eventful 
@@ -5606,7 +5621,7 @@ circE.MYM.eca=CircE.BFGS(data.merged.mym.cor,
                            b 0    b 1 b 2
     Estimates of Betas: 0.0319 0.9681   0
     ----------------------------------------------------
-     CPU Time for optimization 0.043 sec. ( 0 min.)
+     CPU Time for optimization 0.04 sec. ( 0 min.)
                                    
                                    
 
@@ -5617,7 +5632,7 @@ circE.MYO.eca=CircE.BFGS(data.merged.myo.cor,
                  equal.com = TRUE, equal.ang = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:18 2023 
+    Date: Wed Jul  5 14:09:43 2023 
     Data: Circumplex Estimation 
     Model:Constrained model: equal spacing and equal radius 
     Reference variable at 0 degree: eventful 
@@ -5791,7 +5806,7 @@ circE.MYO.eca=CircE.BFGS(data.merged.myo.cor,
                            b 0    b 1 b 2
     Estimates of Betas: 0.0388 0.9612   0
     ----------------------------------------------------
-     CPU Time for optimization 0.049 sec. ( 0 min.)
+     CPU Time for optimization 0.043 sec. ( 0 min.)
                                    
                                    
 
@@ -5802,7 +5817,7 @@ circE.SG.eca=CircE.BFGS(data.merged.sg.cor,
                  equal.com = TRUE, equal.ang = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:18 2023 
+    Date: Wed Jul  5 14:09:43 2023 
     Data: Circumplex Estimation 
     Model:Constrained model: equal spacing and equal radius 
     Reference variable at 0 degree: eventful 
@@ -5975,7 +5990,7 @@ circE.SG.eca=CircE.BFGS(data.merged.sg.cor,
                            b 0    b 1 b 2
     Estimates of Betas: 0.0028 0.9972   0
     ----------------------------------------------------
-     CPU Time for optimization 0.037 sec. ( 0 min.)
+     CPU Time for optimization 0.035 sec. ( 0 min.)
                                    
                                    
 
@@ -5986,7 +6001,7 @@ circE.ARAUS.eca=CircE.BFGS(data.araus.cor,
                  equal.com = TRUE, equal.ang = TRUE)
 ```
 
-    Date: Wed Jul  5 01:01:18 2023 
+    Date: Wed Jul  5 14:09:43 2023 
     Data: Circumplex Estimation 
     Model:Constrained model: equal spacing and equal radius 
     Reference variable at 0 degree: eventful 
@@ -6158,7 +6173,7 @@ circE.ARAUS.eca=CircE.BFGS(data.araus.cor,
                            b 0    b 1 b 2
     Estimates of Betas: 0.0123 0.9877   0
     ----------------------------------------------------
-     CPU Time for optimization 0.037 sec. ( 0 min.)
+     CPU Time for optimization 0.034 sec. ( 0 min.)
                                    
                                    
 
@@ -6177,11 +6192,11 @@ ssm.circE.all<-rbind(
               circE.SG.ea$RMSEA, circE.ARAUS.ea$RMSEA),
         cbind(circE.MYM.ea$SRMR, circE.MYO.ea$SRMR,
               circE.SG.ea$SRMR, circE.ARAUS.ea$SRMR),
-        cbind(circE.MYM.ec$CFI, circE.MYO.ec$CFI, 
+        cbind(circE.MYM.ec$CFI, circE.MYO.ec$CFI,
               circE.SG.ec$CFI, circE.ARAUS.ec$CFI),
         cbind(circE.MYM.ec$RMSEA, circE.MYO.ec$RMSEA,
               circE.SG.ec$RMSEA, circE.ARAUS.ec$RMSEA),
-        cbind(circE.MYM.ec$SRMR, circE.MYO.ec$SRMR, 
+        cbind(circE.MYM.ec$SRMR, circE.MYO.ec$SRMR,
               circE.SG.ec$SRMR, circE.ARAUS.ec$SRMR),
         cbind(circE.MYM.eca$CFI, circE.MYO.eca$CFI,
               circE.SG.eca$CFI, circE.ARAUS.eca$CFI),
@@ -6199,8 +6214,8 @@ ssm.circE.all<-rbind(
                        "CFIec","RMSEAec","SRMRec",
                        "CFIeca","RMSEAeca","SRMReca",
                        "SSM"))
-        
-models.table.new <- ci.rthorr %>% 
+
+models.table.new <- ci.rthorr %>%
         dplyr::mutate(CIp=paste0(round(CI,3)," (",round(p,3),")")) %>%
         dplyr::select(CIp,ETHNICITY) %>%
         pivot_wider(names_from = ETHNICITY,values_from = CIp) %>%
