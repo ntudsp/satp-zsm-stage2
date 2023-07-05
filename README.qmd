@@ -1,0 +1,1267 @@
+---
+title: "SATP zsm Stage 2"
+format: gfm
+editor: visual
+prefer-html: true
+---
+
+## Setup Environment
+
+```{r setup}
+#| message: false
+
+#data
+library(dataverse)
+library(tidyverse)
+library(janitor)
+library(plyr)
+library(reshape2)
+library(readxl)
+library(ggfortify)
+
+#stats
+library(psych)
+library(rstatix)
+library(conover.test)
+library(fmsb)
+library(muStat)
+
+#plots/tables
+library(ggsignif)
+library(ggbrace)
+library(kableExtra)
+library(factoextra)
+library(ggforce)
+library(ggExtra)
+library(ggthemes)
+
+#circumplex
+library(RTHORR)
+library(circumplex)
+library(CircE)
+
+source("helper.R") #load helper functions
+
+#Set dataverse server
+Sys.setenv("DATAVERSE_SERVER" = "https://researchdata.ntu.edu.sg")
+
+```
+
+## Data Loading and Preparation
+
+The survey data was collected via a [Matlab GUI](https://github.com/kenowr/satp-gui "Link to GitHub"). The survey and demographic data are stored in a public data repository at <https://doi.org/10.21979/N9/9AZ21T>.
+
+Load supplementary data for analysis
+
+1.  SATP zsm Stage 1: <https://doi.org/10.21979/N9/0NE37R>
+2.  ARAUS dataset: <https://doi.org/10.21979/N9/9OTEVX>
+
+### SATP zsm Stage 1 & 2 dataverse datasets
+
+```{r dataloader_zsm12}
+#| message: false
+
+#Dataverse dataset doi links
+data.satp.zsm2.name = "10.21979/N9/9AZ21T" #dataset linked to this paper
+data.satp.zsm1.name = "10.21979/N9/0NE37R" #satp stage 1 dataset
+data.araus.name = "10.21979/N9/9OTEVX" #araus dataset
+
+# Loading SATP Stage 2 dataset
+## Define a list of data frame names and associated dataset file names
+data.names <- data.frame(
+        df.name=c("data.subj.zsm2", "data.demo.zsm2", #zsm2
+                  "data.main.zsm1","data.der.zsm1" #zsm1
+                  ),
+        filename=c("SATP_Stage2_zsm_questionnaire.tab",#zsm2 demographic
+                   "SATP_Stage2_zsm_demographics.tab", #zsm2 demographic
+                   "SATP_Stage1_zsm_main.tab", #zsm1 main-axis attributes
+                  "SATP_Stage1_zsm_derived.tab" #zsm1 derived-axis attributes
+                  ))
+
+## Load datasets into a list
+data.satp.zsm2.l <- datavLoader(data.names[1:2,], data.satp.zsm2.name)
+
+# Loading SATP Stage 1 dataset
+data.satp.zsm1.l <- datavLoader(data.names[3:4,], data.satp.zsm1.name)
+```
+
+### ARAUS Dataset
+
+```{r dataloader_araus}
+#| message: false
+
+data.araus.filename <- "data.zip" #filename of araus data
+
+#download data.zip
+data.araus.bin<-dataverse::get_file_by_name(filename = data.araus.filename,
+                            dataset = data.araus.name)
+#write the binary file to zip
+writeBin(data.araus.bin, paste0("./data/",data.araus.filename))
+
+#unzip and retrieve only responses.csv and participants.csv
+unzip(data.araus.filename, 
+      files=c("data/responses.csv","data/participants.csv"))
+```
+
+### ARAUS: cleaning and preparation
+
+```{r clean_araus}
+#| message: false
+
+#araus participant data
+data.araus.participant <- read_csv("./data/participants.csv") %>%
+        dplyr::filter(ethnic==2 & residence_length==1) %>% #ethnic malays
+        dplyr::select(participant)
+
+#subjective test data
+data.araus<-read_csv("./data/responses.csv") %>%
+        #only local resident + ethnic malays
+        dplyr::filter(participant %in% data.araus.participant$participant) %>%
+        #only soundscapes; no augmentation
+        dplyr::filter(grepl("silence",masker)) %>%
+        #remove test and calibration folds
+        dplyr::filter(!fold_r %in% c(0,-1)) %>%
+        #compute ISOPL and ISOEV
+        dplyr::mutate(ISOPL=((pleasant-annoying)+
+                              cospi(0.25)*(calm-chaotic)+
+                              cospi(0.25)*(vibrant-monotonous))/
+                       (4+sqrt(32))) %>%
+        dplyr::mutate(ISOEV=((eventful-uneventful)+
+                              cospi(0.25)*(chaotic-calm)+
+                              cospi(0.25)*(vibrant-monotonous))/
+                       (4+sqrt(32))) %>%
+        #select only relevant columns
+        dplyr::select(c(participant,soundscape,
+                        eventful,vibrant,pleasant,calm,
+                        uneventful, monotonous, annoying, chaotic,
+                        ISOPL, ISOEV))
+```
+
+## Demographic Analysis
+
+```{r demographic}
+#| message: false
+
+#no of participants
+n.participsnts.SG <- length(
+        unique(data.satp.zsm2.l$data.subj.zsm2 %>%
+                       dplyr::filter(ETHNICITY=="SG") %>%
+                       .$participantID))
+n.participsnts.MY.M <- length(
+        unique(data.satp.zsm2.l$data.subj.zsm2 %>%
+                       dplyr::filter(ETHNICITY=="MY:M") %>%
+                       .$participantID))
+n.participsnts.MY.O <- length(
+        unique(data.satp.zsm2.l$data.subj.zsm2 %>%
+                       dplyr::filter(ETHNICITY=="MY:O") %>%
+                       .$participantID))
+
+#summarise language fluency count by groups
+data.demo.merged.gender.fluency <- data.satp.zsm2.l$data.demo.zsm2 %>%
+        dplyr::mutate(fluency=ifelse(
+                set=="UPM", #fluent in oral zsm >6
+                ifelse(as.numeric(as.character(fluency))>6,"Yes","No"),
+                "Yes")) %>%
+                group_by(group,fluency) %>%
+                dplyr::summarise(count=n()) %>%
+                pivot_wider(names_from = group,values_from = c(count)) %>%
+                column_to_rownames(var = "fluency") %>%
+                mutate_all(~replace(., is.na(.), 0)) %>%
+        rbind(data.satp.zsm2.l$data.demo.zsm2 %>%
+        group_by(group,gender) %>%
+        dplyr::summarise(count=n()) %>%
+        pivot_wider(names_from = group,values_from = c(count)) %>%
+        column_to_rownames(var = "gender"))
+
+#demos stats for age, written & spoken fluency scores
+data.demo.merged.numeric <- data.satp.zsm2.l$data.demo.zsm2 %>% 
+        dplyr::mutate(fluency=ifelse(
+                fluency=="Yes",NA,as.numeric(as.character(fluency)))) %>%
+        dplyr::group_by(group) %>%
+        dplyr::summarise(across(c("age","written","fluency"),
+                                list(mean=mean,sd=sd))) %>%
+        dplyr::mutate(Age=paste0(format(round(age_mean,2),nsmall=2),
+                                 " (",
+                                 format(round(age_sd,2),nsmall=2),") "),
+                      `Written Fluency`=paste0(
+                              format(round(written_mean,2),nsmall=2),
+                              " (",
+                              format(round(written_sd,2),nsmall=2),
+                              ") "),
+                      `Spoken Fluency`=paste0(
+                              format(round(fluency_mean,2),nsmall=2),
+                              " (",
+                              format(round(fluency_sd,2),nsmall=2),
+                              ") "),
+                      `Spoken Fluency`=ifelse(
+                              group=="SG","",`Spoken Fluency`)) %>%
+        dplyr::select(!c(age_mean,age_sd,written_mean,written_sd,
+                         fluency_mean,fluency_sd))
+
+#summarise in a table
+data.demo.merged.table<- as.data.frame(t(data.demo.merged.numeric))  %>%
+        row_to_names(row_number = 1) %>% #convert 1st row to colname
+        `rownames<-`(c("Age","Written Fluency","Summary")) %>%
+        #update `Spoken Fluency` for grouped rows
+        dplyr::mutate(SG=ifelse(SG=="","-",SG)) %>%
+        rbind(data.demo.merged.gender.fluency) %>%
+        kableExtra::kbl(booktabs = T, linesep = "",
+                        #format = "latex",
+                        format = "html",
+                        label = "demo",
+                        caption = "Summary of demographic information")%>%
+        pack_rows("Spoken Fluency", 3, 5) %>%
+        pack_rows("Gender", 6, 7) %>%
+        row_spec(3, hline_after = T) %>%
+        #kable_styling(latex_table_env = "tabularx") %>%
+        kable_styling(protect_latex = TRUE) %>%
+        kable_paper(full_width = T) #%>%
+        #save_kable(paste0(getwd(),"/Table tex files/demo.tex"))
+data.demo.merged.table
+```
+
+## Exploratory analysis
+
+### Summary statistics
+
+```{r sumStats}
+#| message: false
+
+#summary of median values
+data.merged.median<-data.satp.zsm2.l$data.subj.zsm2 %>%
+        dplyr::group_by(stimuliID,set) %>%
+        dplyr::summarise(across(pleasant:monotonous,
+                         median,na.rm=TRUE)) %>%
+        pivot_longer(cols=-c(1:2),names_to = "PAQ",values_to = "median")
+
+#pivot to long table
+data.merged.long<-data.satp.zsm2.l$data.subj.zsm2 %>%
+        pivot_longer(names_to = "PAQ",
+                     values_to = "Score",
+                     cols = c("pleasant":"monotonous"))
+
+#ISOPL and ISOEV
+data.ISOPLEV.median <- data.satp.zsm2.l$data.subj.zsm2 %>%
+        group_by(stimuliID,ETHNICITY) %>%
+        dplyr::summarise(across(c(ISOPL,ISOEV),
+                         median,na.rm=TRUE))
+
+#Median contour plot with median points of ISOPL and ISOEV
+p.ISOPLEV.contour.facetedStimuli<-ggplot(data=data.satp.zsm2.l$data.subj.zsm2,
+                                         aes(x = ISOPL, y = ISOEV)) +
+        facet_wrap(~stimuliID, ncol = 9) +
+        # stat_density_2d(bins=3,contour_var = "ndensity",breaks=c(0.5),
+        #                 aes(color=ETHNICITY)) +
+        stat_density_2d(bins=3,contour_var = "ndensity",breaks=c(0.5),
+                        geom = "density_2d",
+                        aes(color=ETHNICITY)) +
+        geom_point(data = data.ISOPLEV.median, 
+                    aes(x = ISOPL, y = ISOEV, color=ETHNICITY)) +
+        ylim(c(-1,1)) + xlim(c(-1,1)) +
+        ggthemes::scale_colour_few() +
+        ylim(c(-1.1,1.1)) + xlim(c(-1.1,1.1))
+p.ISOPLEV.contour.facetedStimuli
+```
+
+```{r kdecontour}
+
+#KDE contour of all points 
+p.ISOPLEV.contour.all<-ggplot(data=data.satp.zsm2.l$data.subj.zsm2,
+                              aes(x = ISOPL, y = ISOEV)) +
+        #facet_wrap(~stimuliID, ncol = 9) +
+        stat_density_2d(data=data.satp.zsm2.l$data.subj.zsm2,
+                        geom = "density_2d",
+                        alpha=0.7,
+                        contour_var = "ndensity",
+                        breaks=c(0.2),
+                        aes(color=ETHNICITY,
+                            fill=ETHNICITY,
+                            alpha = stat(level))) +
+        stat_density_2d(data=data.araus,
+                geom = "density_2d",
+                alpha=0.5,
+                n=100,
+                contour_var = "ndensity",
+                breaks=c(0.2),
+                contour = TRUE, 
+                color="#F17CB0",
+                linetype = "dashed") +
+        #geom_path(aes(x, y), data=contour_95) +
+        geom_point(data = data.ISOPLEV.median, alpha=0.3,
+                    aes(x = ISOPL, y = ISOEV, color=ETHNICITY)) +
+        # geom_circle(aes(x0 = 0, y0 = 0, r = 1),
+        #             fill = NA, color = "grey",
+        #             linetype = "twodash") +  # Add circles
+        #scale_colour_brewer(palette = "Set1") +
+        ggthemes::scale_colour_few() +
+        ylim(c(-1.2,1.2)) + xlim(c(-1.2,1.2)) +
+        theme(legend.position="bottom")
+        #theme(legend.position="none")
+
+p.ISOPLEV.contour.all.marg<-ggMarginal(p.ISOPLEV.contour.all,
+                                       groupColour = T,
+                                       groupFill = T,
+                                       alpha=0.15)
+p.ISOPLEV.contour.all.marg
+
+ggsave(paste0("./outputs/allcontour.pdf"),
+       plot = p.ISOPLEV.contour.all.marg, 
+       width = 2300, height = 2350, units = "px",scale = 0.7)
+```
+
+## Statistical Analysis
+
+### Order effects analysis
+
+Due to a bug in the MATLAB GUI program, the same randomized participant order was presented to the participants whenever the MATLAB GUI program was restarted. Here, the NTU set is evaluated for order effects since some of the participants had the same randomized order but some were truly randomized.
+
+```{r ksOrder}
+#| message: false
+
+#extract stimuli order from NTU group
+NTUorder.df <- data.satp.zsm2.l$data.subj.zsm2 %>% 
+        filter(set=="NTU") %>%
+        dplyr::select(participantID,stimuliID) %>%
+        pivot_wider(names_from = participantID, values_from = stimuliID)
+
+# Create a reference column (assuming it is the first column)
+reference_column <- NTUorder.df$"8"[[1]]
+
+# Initialize a list to store equivalent columns
+equivalent_columns <- list()
+
+# Loop through each column starting from the second column
+for (i in 1:ncol(NTUorder.df)) {
+  # Compare each column to the reference column
+  if (all(reference_column == NTUorder.df[1, i][[1]][[1]])) {
+          equivalent_columns[[
+                  length(equivalent_columns) + 1
+                  ]] <- as.numeric(colnames(NTUorder.df[1, i]))
+  }
+}
+
+# Extract the equivalent columns from the dataframe
+same.order.pid <- unlist(equivalent_columns)
+
+# Print the equivalent columns
+cat("Participant IDs with the same order:\n")
+print(same.order.pid)
+
+#create new column to store 
+ks.order.df <- data.merged.long %>%
+        dplyr::filter(set=="NTU") %>%
+        dplyr::mutate(group=ifelse(
+                participantID %in% same.order.pid, "same", "random"),
+                across(c(stimuliID,PAQ),.fns = as.factor)) %>%
+        dplyr::group_by(PAQ,stimuliID) %>%
+        dplyr::summarize(
+                ks_test = list(ks.test(Score[group == "same"],
+                                       Score[group == "random"],
+                                       exact = NULL,
+                                       alternative = "two.sided")),
+                stat = ks_test[[1]]$statistic,
+                ks.pvalue = ks_test[[1]]$p.value,
+                ks.signif = ks.pvalue<0.05,
+                n.same = length(Score[group == "same"]),
+                n.rand = length(Score[group == "random"])) %>%
+        dplyr::ungroup() %>%
+        dplyr::mutate(ks.padj = p.adjust(ks.pvalue, method="BH"),
+                      ks.adjsignif = ks.padj<0.05) %>%
+        dplyr::select(!ks_test)
+
+cat("Number of KS comparisons p <0.05: ", 
+    sum(ks.order.df$ks.signif),"/",
+    length(ks.order.df$ks.signif), "\n")
+
+cat("Number of KS comparisons with p.adj <0.05: ", 
+    sum(ks.order.df$ks.adjsignif),"/",
+    length(ks.order.df$ks.adjsignif))
+```
+
+Hence, there were no order effects present.
+
+### Difference in PAQ scores across groups
+
+Kruskal-Wallis Test
+
+```{r kwt}
+#| message: false
+
+#initialise data frame
+data.kwt<-data.frame(stimuliID=numeric(),
+                     PAQ=character(),
+                     pvalue=numeric(),
+                     effect=numeric())
+
+list.PAQ<-c("eventful","vibrant","pleasant","calm",
+            "uneventful","monotonous","annoying","chaotic",
+            "ISOPL","ISOEV")
+
+#for each stimuli
+for(s.ID in 1:length(unique(data.satp.zsm2.l$data.subj.zsm2$stimuliID))){
+        #for each PAQ attribute
+        for (paq in list.PAQ){
+                df=data.satp.zsm2.l$data.subj.zsm2 %>%
+                        dplyr::filter(stimuliID==s.ID)
+                kwt<-kruskal.test(
+                        as.formula(paste(paq,"~ETHNICITY")),
+                        data=df)
+                kwteff<-kruskal_effsize(
+                        formula = as.formula(paste(paq,"~ETHNICITY")),
+                        data=df)
+                data.kwt<-rbind(
+                        data.kwt, 
+                        c(stimuliID=s.ID,
+                          PAQ=paq,
+                          pvalue=kwt$p.value,
+                          effect=kwteff$effsize))
+        }
+}
+colnames(data.kwt)<-c("stimuliID","PAQ","pvalue","effect")
+
+#cases with significant differences
+data.kwt.sig<-data.kwt %>%
+        dplyr::filter(as.numeric(pvalue)<0.05 & as.numeric(effect)>=0.01)
+
+#export to csv
+write.csv(x=data.kwt.sig,
+          file = "./outputs/SATP_Stage2_zsm_sigKWT.csv",
+          row.names = FALSE)
+```
+
+Posthoc Conover-Iman Tests
+
+```{r cit}
+#| message: false
+
+#initialise data frame
+data.cit<-data.frame(stimuliID=numeric(),
+                     PAQ=character(),
+                     stat=numeric(),
+                     set=character(),
+                     pvalue=numeric(),
+                     adjpval=numeric())
+
+#Perform CIT for significant cases in KWT
+for(idx in 1:length(data.kwt.sig$stimuliID)){
+        paq<-data.kwt.sig$PAQ[idx]
+        x.ID<-data.kwt.sig$stimuliID[idx]
+        #select only kwt significant
+        df<-data.satp.zsm2.l$data.subj.zsm2 %>% 
+                dplyr::filter(stimuliID==x.ID) 
+        cit<-conover.test(x=df[,paq],
+                          g=df$ETHNICITY,
+                          kw=FALSE,
+                          method='bonferroni',
+                          altp=TRUE)
+        data.cit<-rbind(
+                data.cit,
+                cbind(data.frame(stimuliID=x.ID,PAQ=paq),
+                      as.data.frame(cit) %>%
+                              dplyr::select(c("T",comparisons,
+                                              altP,altP.adjusted))))
+}
+
+#export significant cases
+data.cit.sig<-data.cit %>%
+        filter(as.numeric(altP.adjusted)<0.05) %>%
+        dplyr::mutate(altP.adjusted=round(altP.adjusted,digits = 4))
+
+write.csv(x=data.cit.sig,
+          file = "./outputs/SATP_Stage2_zsm_sigCIT.csv",
+          row.names = FALSE)
+```
+
+### Table of KWT and CIT results
+
+```{r kwtcitTable}
+#| message: false
+
+#kruskal-wallis table of p-vales and effect sizes
+kwtTable<-data.kwt %>% 
+        pivot_longer(cols = c("pvalue","effect"),
+                     names_to = "Stat",values_to = "Value") %>%
+        dplyr::mutate(Value=round(as.numeric(Value),4),
+                      Value=case_when(Stat=="pvalue" & Value<0.0001~
+                                paste0("****",formatC(Value,
+                                                      format="f",
+                                                      digits=4)),
+                        Stat=="pvalue" & Value<0.001~
+                                paste0("***",formatC(Value,
+                                                     format="f",
+                                                     digits=4)),
+                        Stat=="pvalue" & Value<0.01~
+                                paste0("**",formatC(Value,
+                                                    format="f",
+                                                    digits=4)),
+                        Stat=="pvalue" & Value<0.05~
+                                paste0("*",formatC(Value,
+                                                   format="f",
+                                                   digits=4)),
+                        Stat=="effect" & abs(Value)>=0.01 & Value<0.06~
+                                paste0("(S)",formatC(Value,
+                                                     format="f",
+                                                     digits=4)),
+                        Stat=="effect" & abs(Value)>=0.06 & Value<0.14~
+                                paste0("(M)",formatC(Value,
+                                                     format="f",
+                                                     digits=4)),
+                        Stat=="effect" & abs(Value)>=0.14~
+                                paste0("(L)",formatC(Value,
+                                                     format="f",
+                                                     digits=4)),
+                        TRUE~formatC(Value,format="f",digits=4))) %>%
+        pivot_wider(names_from = "PAQ", values_from = "Value") %>%
+        kableExtra::kbl(booktabs = T, linesep = "",
+                        #format = "latex",
+                        format = "html",
+                        label = "kwt",
+                        caption = "Summary of Kruskal-Wallis Test")%>%
+        collapse_rows(columns = 1, valign = "top") %>%
+        #kable_styling(latex_table_env = "tabularx") %>%
+        kable_styling(protect_latex = TRUE) %>%
+        kable_paper(full_width = T) #%>%
+        #save_kable(paste0(getwd(),"/Table tex files/kwtTable.tex"))
+kwtTable
+
+#posthoc conover-iman table of p-vales
+citTable <- data.cit %>% 
+        dplyr::mutate(PAQ=factor(PAQ, level=list.PAQ),
+                      comparisons=gsub(" - ","--",comparisons)) %>%
+        dplyr::select(!altP) %>%
+        dplyr::mutate(altP.adjusted=round(as.numeric(altP.adjusted),4),
+                      altP.adjusted=case_when(altP.adjusted <0.0001~
+                                paste0("****",formatC(altP.adjusted,
+                                                      format="f",digits=4)),
+                        altP.adjusted <0.001~
+                                paste0("***",formatC(altP.adjusted,
+                                                     format="f",digits=4)),
+                        altP.adjusted <0.01~
+                                paste0("**",formatC(altP.adjusted,
+                                                    format="f",digits=4)),
+                        altP.adjusted <0.05~
+                                paste0("*",formatC(altP.adjusted,
+                                                   format="f",digits=4)),
+                        TRUE~formatC(altP.adjusted,format="f",digits=4))) %>%
+        pivot_wider(values_from = altP.adjusted, names_from = comparisons) %>%
+        kableExtra::kbl(booktabs = T, linesep = "",
+                        #format = "latex",
+                        format = "html",
+                        label = "kwt",
+                        caption = "Summary of Kruskal-Wallis Test")%>%
+        collapse_rows(columns = 1, valign = "top") %>%
+        #kable_styling(latex_table_env = "tabularx") %>%
+        kable_styling(protect_latex = TRUE) %>%
+        kable_paper(full_width = T) #%>%
+        #save_kable(paste0(getwd(),"/Table tex files/citTable.tex"))
+citTable
+```
+
+## Plotting posthoc paired comparison results
+
+### Box plot of all PAQ across all stimuli
+
+```{r PAQboxplot}
+
+#box plots PAQ vs stimuli
+#generate pairs and signif annotations for ggsnif plotting
+boxplot.xtolerance<-0.25
+signifbar.height.mym.myo<-110
+signifbar.height.mym.sg<-135
+signifbar.height.myo.sg<-110
+
+#prepare dataframe for plotting significance brace
+PAQ.combined.signif <- data.cit.sig %>%
+        dplyr::filter(!PAQ %in% c("ISOPL","ISOEV")) %>%
+        dplyr::mutate(stimuliID=as.numeric(stimuliID),
+                      PAQ=case_when(PAQ == "eventful"~"e",
+                                        PAQ == "vibrant"~"v",
+                                        PAQ == "pleasant"~"p",
+                                        PAQ == "calm"~"ca",
+                                        PAQ == "uneventful"~"u",
+                                        PAQ == "monotonous"~"m",
+                                        PAQ == "annoying"~"a",
+                                        PAQ == "chaotic"~"ch"),
+                      PAQ=factor(PAQ, level=c("e","v",
+                                              "p","ca","u",
+                                              "m","a",
+                                              "ch")),
+                      #factor order for x-axis location
+                      #PAQfctorder=as.numeric(PAQ),
+                      PAQfctorder=as.numeric(stimuliID),
+                      #MY:M is left most boxplot in group; MY:O is the middle
+                      #x is the left edge of the signif bar
+                      x=ifelse(grepl("MY:M \\-",comparisons), 
+                               PAQfctorder-boxplot.xtolerance,
+                               PAQfctorder),
+                      #xend is the right edge of the signif bar
+                      xend=ifelse(grepl("- MY:O",comparisons),
+                                  PAQfctorder,PAQfctorder+boxplot.xtolerance),
+                      y=ifelse(grepl("MY:M \\-",comparisons),
+                                  ifelse(grepl("- MY:O",comparisons),
+                                         signifbar.height.mym.myo,
+                                         signifbar.height.mym.sg),
+                               signifbar.height.myo.sg),
+                      #yend=y-5,
+                      ann.labels=ifelse(
+                              altP.adjusted<0.0001,
+                              "****",
+                              ifelse(altP.adjusted<0.001,
+                                     "***",
+                                     ifelse(altP.adjusted<0.01,
+                                            "**",
+                                            ifelse(altP.adjusted<0.05,
+                                                   "*","ns")))),
+                      stimuliID=factor(stimuliID,levels=c(1:27)))
+        
+#str(PAQ.combined.signif)
+groupingFactor<-1
+plotGroup<-1
+totalStimuli<-length(unique(data.merged.long$stimuliID))
+uniqueStimuli<-unique(data.merged.long$stimuliID)
+stimuliGrps<-split(sort(uniqueStimuli), 
+                   ceiling(seq_along(uniqueStimuli)/
+                                   (totalStimuli/groupingFactor)))
+p.8PAQ.box<-ggplot(data = data.merged.long %>% 
+                           mutate(stimuliID=as.factor(stimuliID),
+                                  PAQ=case_when(PAQ == "eventful"~"e",
+                                        PAQ == "vibrant"~"v",
+                                        PAQ == "pleasant"~"p",
+                                        PAQ == "calm"~"ca",
+                                        PAQ == "uneventful"~"u",
+                                        PAQ == "monotonous"~"m",
+                                        PAQ == "annoying"~"a",
+                                        PAQ == "chaotic"~"ch"),
+                              PAQ=factor(PAQ, level=c("e","v",
+                                              "p","ca","u",
+                                              "m","a",
+                                              "ch"))) %>%
+                           dplyr::filter(
+                                   stimuliID %in% stimuliGrps[[plotGroup]]),
+                   aes(x = stimuliID, y = Score)) +
+        geom_boxplot(aes(fill=ETHNICITY)) +
+        geom_signif(data=PAQ.combined.signif %>%
+                            dplyr::filter(grepl("MY:M -",comparisons)) %>%
+                            dplyr::filter(
+                                    stimuliID %in% stimuliGrps[[plotGroup]] &
+                                            grepl("MY:M -",comparisons)),
+                    inherit.aes = F,
+                    mapping=aes(xmin=x,xmax=xend,y_position=y,
+                                annotations=ann.labels,group=stimuliID),
+                    textsize = 4 ,color="black",vjust = 0.4,
+                    tip_length = 0.05, manual=T) +
+        geom_signif(data=PAQ.combined.signif %>%
+                            dplyr::filter(grepl("MY:O -",comparisons)) %>%
+                            dplyr::filter(
+                                    stimuliID %in% stimuliGrps[[plotGroup]] &
+                                            grepl("MY:O -",comparisons)),
+                    inherit.aes = F,
+                    mapping=aes(xmin=x, xmax=xend, y_position=y,
+                                annotations=ann.labels,group=stimuliID),
+                    textsize = 4 ,color="black",vjust = 0.4,
+                    tip_length = 0.05, manual=T) +
+        
+        ylim(c(0,140)) + xlab("Stimuli") + 
+        facet_wrap(facets = ~PAQ, ncol = 1, strip.position="right") +
+        theme(legend.position="bottom")
+        
+p.8PAQ.box
+#ggsave(paste0("boxplots.pdf"),plot = p.8PAQ.box, width = 1700, 
+#       height = 2300, units = "px",scale = 1.4)
+
+ggsave(paste0("./outputs/boxplots.pdf"),
+       plot = p.8PAQ.box, width = 2300, 
+       height = 2300, units = "px",scale = 1.4)
+```
+
+### Median contour plot for ISOPL and ISOEV across all stimuli
+
+```{r PAQContourplot}
+
+#Plot ISOPL and ISOEV contour plot
+
+ISOPL.signif <- data.cit.sig %>%
+        dplyr::filter(PAQ %in% c("ISOPL","ISOEV")) %>%
+        dplyr::mutate(stimuliID=as.numeric(stimuliID))
+
+ISOPLEV.combined.signif <- data.cit.sig %>%
+        #only ISOPL and ISOEV for plotting signif in contours
+        dplyr::filter(PAQ %in% c("ISOPL","ISOEV")) %>%
+        #extract comparison pair
+        dplyr::mutate(stimuliID=as.numeric(stimuliID),
+               #left comparison pair
+               ETHNICITY=ifelse(grepl("SG \\-",comparisons),"SG",
+                         ifelse(grepl("MY:O -",comparisons),
+                                     "MY:O","MY:M"))) %>%
+        #retrieve ISOPL and ISOEV median values of 1st comparison pair
+        left_join(data.ISOPLEV.median,by=c("stimuliID","ETHNICITY")) %>%
+        #update colname to reflect PAIR1
+        dplyr::mutate(PAIR1.ETHNICITY=ETHNICITY, 
+                      PAIR1.ISOPL=ISOPL, 
+                      PAIR1.ISOEV=ISOEV,
+               #right comparison pair
+               ETHNICITY=ifelse(grepl("- SG",comparisons),"SG",
+                         ifelse(grepl("- MY:O",comparisons),
+                                     "MY:O","MY:M")), .keep="unused") %>%
+        #retrieve ISOPL and ISOEV median values of 2nd comparison pair
+        left_join(data.ISOPLEV.median,by=c("stimuliID","ETHNICITY")) %>%
+         #update colname to reflect PAIR2
+        dplyr::mutate(PAIR2.ETHNICITY=ETHNICITY, 
+                      PAIR2.ISOPL=ISOPL, 
+                      PAIR2.ISOEV=ISOEV,
+               .keep="unused") %>%
+        #generate significance labels
+        dplyr::mutate(ann.labels=ifelse(
+                altP.adjusted<0.0001,
+                "****",
+                ifelse(altP.adjusted<0.001,
+                       "***",
+                       ifelse(altP.adjusted<0.01,
+                              "**",
+                              ifelse(altP.adjusted<0.05,"*","ns"))))) 
+
+#create dataframe for ISOEV signif brace plotting
+temp.df<-ISOPLEV.combined.signif %>% filter(PAQ=="ISOEV") %>%
+        pivot_longer(cols = c("PAIR1.ISOEV","PAIR2.ISOEV"),
+                     values_to = c("ISOEV")) %>%
+        dplyr::select(c(ISOEV))
+brace.df<-ISOPLEV.combined.signif %>% filter(PAQ=="ISOEV") %>%
+        pivot_longer(cols = c("PAIR1.ISOPL","PAIR2.ISOPL"),
+                     values_to = c("ISOPL")) %>%
+        cbind(.,temp.df)
+
+p.ISOPLEV.contour.signif<-p.ISOPLEV.contour.facetedStimuli + 
+        #draw signif braces for ISOPL
+        geom_signif(data = ISOPLEV.combined.signif %>% filter(PAQ=="ISOPL"),
+                    inherit.aes = F,
+                    aes(y_position=c(0.5,0.9,0.2,0.4,0.8,0.6,0.2,0.3),
+                        xmin=PAIR1.ISOPL,
+                        xmax=PAIR2.ISOPL,
+                        annotations = ann.labels),
+                    manual = T) +
+        #draw signif braces for ISOEV
+        #right side brace: stimuli 4
+        stat_brace(data = brace.df %>% filter(stimuliID %in% c(4,20)),
+                   mapping=aes(x=ISOPL,y=ISOEV, 
+                               label=ann.labels),
+                   inherit.aes = F, 
+                   rotate = 90, labelrotate = 90, labelsize = 5,
+                   distance = 0.2,width = 0.2,bending=0.01) +
+        #left side brace: stimuli 15
+        stat_brace(data = brace.df %>% filter(stimuliID == 15),
+                   mapping=aes(x=ISOPL,y=ISOEV, 
+                               label=ann.labels),
+                   inherit.aes = F, 
+                   rotate = 270, labelrotate = 270, labelsize = 5, 
+                   labeldistance = 0.3,
+                   distance = 0.5,width = 0.2,bending=0.01) +
+        #right side brace: stimuli 7
+        stat_brace(data = brace.df %>% filter(stimuliID == 7) %>% .[1:2,],
+                   mapping=aes(x=ISOPL,y=ISOEV,
+                               label=ann.labels),
+                   inherit.aes = F,
+                   rotate = 90, labelrotate = 90, labelsize = 5,
+                   labeldistance = 0.1,
+                   distance = 0.05,width = 0.2,bending=0.01)+
+        #left side brace: stimuli 7
+        stat_brace(data = brace.df %>% filter(stimuliID == 7) %>% .[3:4,],
+                   mapping=aes(x=ISOPL,y=ISOEV,
+                               label=ann.labels),
+                   inherit.aes = F,
+                   rotate = 270, labelrotate = 270, labelsize = 5,
+                   labeldistance = 0.3,
+                   distance = 0.4,width = 0.2,bending=0.01) +
+        #right side brace: stimuli 12
+        stat_brace(data = brace.df %>% filter(stimuliID == 12) %>% .[1:2,],
+                   mapping=aes(x=ISOPL,y=ISOEV, 
+                               label=ann.labels),
+                   inherit.aes = F, 
+                   rotate = 90, labelrotate = 90, labelsize = 5, 
+                   labeldistance = 0.1,
+                   distance = 0.2,width = 0.2,bending=0.01) +
+        #left side brace: stimuli 12
+        stat_brace(data = brace.df %>% filter(stimuliID == 12) %>% .[3:4,],
+                   mapping=aes(x=ISOPL,y=ISOEV,
+                               label=ann.labels),
+                   inherit.aes = F,
+                   rotate = 270, labelrotate = 270, labelsize = 5,
+                   labeldistance = 0.2,
+                   distance = 0.4,width = 0.2,bending=0.01) +
+        #right side brace: stimuli 22
+        stat_brace(data = brace.df %>% filter(stimuliID == 22) %>% .[1:2,],
+                   mapping=aes(x=ISOPL,y=ISOEV, 
+                               label=ann.labels),
+                   inherit.aes = F, 
+                   rotate = 90, labelrotate = 90, labelsize = 5,
+                   distance = 0.1,width = 0.2,bending=0.01) +
+        #left side brace: stimuli 22
+        stat_brace(data = brace.df %>% filter(stimuliID == 22) %>% .[3:4,],
+                   mapping=aes(x=ISOPL,y=ISOEV,
+                               label=ann.labels),
+                   inherit.aes = F,
+                   rotate = 270, labelrotate = 270, labelsize = 5,
+                   labeldistance = 0.2,
+                   distance = 0.25,width = 0.2,bending=0.01) +
+        theme(legend.position = "bottom",
+              axis.text.x=element_text(angle = 90, vjust = 0.5, hjust=1))
+p.ISOPLEV.contour.signif
+
+ggsave("./outputs/ISOPLEVMedianContourNew.pdf",
+       plot = p.ISOPLEV.contour.signif, 
+       width = 2500, height = 1150, units = "px",scale = 1.4)
+```
+
+## PCA
+
+### Correlation matrix
+
+```{r corr}
+
+#perform PCA on 8 attributes
+#my:m group
+data.merged.mym<-data.satp.zsm2.l$data.subj.zsm2 %>%
+        dplyr::filter(ETHNICITY=="MY:M") %>%
+        dplyr::select(c(eventful,vibrant,
+                        pleasant,calm,
+                        uneventful,monotonous,
+                        annoying,chaotic))
+data.merged.mym.cor<-cor(data.merged.mym)
+
+#my:o group
+data.merged.myo<-data.satp.zsm2.l$data.subj.zsm2 %>%
+        dplyr::filter(ETHNICITY=="MY:O") %>%
+        dplyr::select(c(eventful,vibrant,
+                        pleasant,calm,
+                        uneventful,monotonous,
+                        annoying,chaotic))
+data.merged.myo.cor<-cor(data.merged.myo)
+
+#sg group
+data.merged.sg<-data.satp.zsm2.l$data.subj.zsm2 %>%
+        dplyr::filter(ETHNICITY=="SG") %>%
+        dplyr::select(c(eventful,vibrant,
+                        pleasant,calm,
+                        uneventful,monotonous,
+                        annoying,chaotic))
+data.merged.sg.cor<-cor(data.merged.sg)
+
+#araus dataset
+data.araus.cor<-cor(
+        data.araus %>% 
+                dplyr::select(c(eventful,vibrant,
+                                pleasant,calm,
+                                uneventful,monotonous,
+                                annoying,chaotic)))
+
+```
+
+### KMO and Bartlett's Test of Sphericity
+
+```{r kmospher}
+
+#KMO test
+kmo<-rbind(KMO(data.merged.mym.cor)$MSA %>% as.data.frame() %>%
+                   mutate(ETHNICITY="MY:M"),
+           KMO(data.merged.myo.cor)$MSA %>% as.data.frame() %>%
+                   mutate(ETHNICITY="MY:O"),
+           KMO(data.merged.sg.cor)$MSA %>% as.data.frame() %>%
+                   mutate(ETHNICITY="SG"),
+        KMO(data.araus.cor)$MSA %>% as.data.frame() %>%
+                   mutate(ETHNICITY="ARAUS")) %>%
+        `colnames<-`(c("MSA","ETHNICITY"))
+kmo
+
+#Bartlett's Test of Sphericity
+spher<-rbind(cortest.bartlett(data.merged.mym.cor,
+                              n = nrow(data.merged.mym))$p.value %>% 
+                     as.data.frame() %>%
+                     dplyr::mutate(ETHNICITY="MY:M"),
+             cortest.bartlett(data.merged.myo.cor,
+                              n = nrow(data.merged.myo))$p.value %>% 
+                     as.data.frame() %>%
+                     dplyr::mutate(ETHNICITY="MY:O"),
+             cortest.bartlett(data.merged.sg.cor,
+                              n = nrow(data.merged.sg))$p.value %>% 
+                     as.data.frame() %>%
+                     dplyr::mutate(ETHNICITY="SG"),
+             cortest.bartlett(data.araus.cor,
+                              n = nrow(data.araus))$p.value %>% 
+                     as.data.frame() %>%
+                     dplyr::mutate(ETHNICITY="ARAUS")) %>%
+        `colnames<-`(c("p-value","ETHNICITY"))
+spher
+```
+
+### PCA
+
+```{r pcamym}
+
+#PCA of 8 paq for MY:M
+paq.pca.MYM <- data.merged.mym %>%
+        prcomp(center = TRUE,scale. = TRUE,retx = TRUE)
+
+#reflect y-axis
+paq.pca.MYM$rotation[,2]<-paq.pca.MYM$rotation[,2]*-1
+
+#plot PCA variables 
+paq.pca.MYM.p<-fviz_pca_var(paq.pca.MYM,
+             col.var = "darkred",
+             repel = TRUE     # Avoid text overlapping
+)
+paq.pca.MYM.p
+
+```
+
+```{r pcamyo}
+
+#PCA of 8 paq for MY:O
+paq.pca.MYO <- data.merged.myo %>%
+        prcomp(center = TRUE,scale. = TRUE,retx = TRUE)
+
+#plot PCA variables 
+paq.pca.MYO.p<-fviz_pca_var(paq.pca.MYO, col.var = "steelblue",
+             repel = TRUE     # Avoid text overlapping
+)
+paq.pca.MYO.p
+```
+
+```{r pcasg}
+
+#PCA of 8 paq for SG
+paq.pca.SG <- data.merged.sg %>%
+        prcomp(center = TRUE,scale. = TRUE,retx = TRUE)
+
+# #reflect x-axis and y-axis i.e. rotate 180deg
+# paq.pca.SG$rotation[,1]<-paq.pca.SG$rotation[,1]*-1
+# paq.pca.SG$rotation[,2]<-paq.pca.SG$rotation[,2]*-1
+
+#plot PCA variables 
+paq.pca.SG.p<-fviz_pca_var(paq.pca.SG, col.var = "forestgreen",
+             repel = TRUE     # Avoid text overlapping
+)
+paq.pca.SG.p
+
+```
+
+```{r pcaaraus}
+
+#PCA of 8 paq for SG
+paq.pca.ARAUS <- data.araus %>% 
+        dplyr::select(c(eventful,vibrant,
+                        pleasant,calm,
+                        uneventful,monotonous,
+                        annoying,chaotic)) %>%
+        prcomp(center = TRUE,scale. = TRUE,retx = TRUE)
+
+#plot PCA variables 
+paq.pca.ARAUS.p<-fviz_pca_var(paq.pca.ARAUS, col.var = "maroon",
+             repel = TRUE     # Avoid text overlapping
+)
+paq.pca.ARAUS.p
+
+
+```
+
+```{r pcaplot}
+
+#summarise PCA data for plotting
+pca.paq<-rbind(facto_summarize(paq.pca.SG, "var", axes = 1:2)[,-1] %>%
+        rownames_to_column(var = "PAQ") %>%
+        dplyr::mutate(ETHNICITY="SG",
+                #reflect x-axis and y-axis i.e. rotate 180deg
+                Dim.1=Dim.1*-1),
+                #Dim.2=Dim.2*-1),
+      facto_summarize(paq.pca.MYO, "var", axes = 1:2)[,-1] %>%
+        rownames_to_column(var = "PAQ") %>%
+        dplyr::mutate(ETHNICITY="MY:O"),
+      facto_summarize(paq.pca.MYM, "var", axes = 1:2)[,-1] %>%
+        rownames_to_column(var = "PAQ") %>%
+        dplyr::mutate(ETHNICITY="MY:M",
+                Dim.1=Dim.1*-1), 
+        facto_summarize(paq.pca.ARAUS, "var", axes = 1:2)[,-1] %>%
+        rownames_to_column(var = "PAQ") %>%
+        dplyr::mutate(ETHNICITY="ARAUS",
+                Dim.1=Dim.1*-1))
+
+#create rotation matrix for MY:M based on pleasantness at 90 deg
+# Rotation angle in radians
+rotation.angle.mym <- -atan(
+        pca.paq[pca.paq$ETHNICITY=="MY:M" & 
+                        pca.paq$PAQ=="pleasant","Dim.2"]/
+                        pca.paq[pca.paq$ETHNICITY=="MY:M" & 
+                                        pca.paq$PAQ=="pleasant","Dim.1"])
+
+# Create rotation matrix
+rotation.matrix.mym <- matrix(c(cos(rotation.angle.mym),
+                                -sin(rotation.angle.mym),
+                                sin(rotation.angle.mym), 
+                                cos(rotation.angle.mym)),
+                          nrow = 2, ncol = 2, byrow = TRUE)
+
+# Transpose the endpoint coordinates matrix
+endpoint.coordinates.mym <- t(as.matrix(
+        pca.paq[pca.paq$ETHNICITY=="MY:M",c("Dim.1","Dim.2")])) 
+
+# Apply rotation to the endpoint coordinates
+rotated.coordinates.mym <- rotation.matrix.mym %*% endpoint.coordinates.mym
+
+#create rotation matrix for ARUAS based on pleasantness at 90 deg
+# Rotation angle in radians
+rotation.angle.araus <- -atan(pca.paq[pca.paq$ETHNICITY=="ARAUS" &
+                                              pca.paq$PAQ=="pleasant",
+                                      "Dim.2"]/
+                        pca.paq[pca.paq$ETHNICITY=="ARAUS" &
+                                        pca.paq$PAQ=="pleasant","Dim.1"])
+
+# Create rotation matrix
+rotation.matrix.araus <- matrix(c(cos(rotation.angle.araus),
+                                  -sin(rotation.angle.araus),
+                                  sin(rotation.angle.araus),
+                                  cos(rotation.angle.araus)),
+                                nrow = 2, ncol = 2, byrow = TRUE)
+
+# Transpose the endpoint coordinates matrix
+endpoint.coordinates.araus <- t(as.matrix(pca.paq[pca.paq$ETHNICITY=="ARAUS",c("Dim.1","Dim.2")])) 
+
+# Apply rotation to the endpoint coordinates
+rotated.coordinates.araus <- rotation.matrix.araus %*% endpoint.coordinates.araus
+#flip along x-axis
+rotated.coordinates.araus[2,] <- rotated.coordinates.araus[2,]*-1
+
+pca.paq.rotated <- pca.paq
+pca.paq.rotated[pca.paq.rotated$ETHNICITY=="MY:M",c("Dim.1","Dim.2")] <-
+        t(rotated.coordinates.mym)
+pca.paq.rotated[pca.paq.rotated$ETHNICITY=="ARAUS",c("Dim.1","Dim.2")] <-
+        t(rotated.coordinates.araus)
+
+
+#plot PCA of three groups separately in subplots
+p.pca<-ggplot(
+        pca.paq.rotated %>%
+                mutate(ETHNICITY=factor(
+                        ETHNICITY,
+                        levels = c("MY:M","MY:O","SG","ARAUS"))),
+              aes(x = Dim.1, y = Dim.2)) +
+        geom_segment(aes(x=0, y=0,
+                         xend=Dim.1, yend=Dim.2, 
+                         color = PAQ,
+                         linetype = PAQ),  
+                     # Add arrows with conditional formatting
+                     arrow = arrow(length = unit(0.25, "cm"),
+                                   type = "closed",
+                                   ), 
+                     size = 1,linejoin='mitre') +
+        geom_text(aes(label = PAQ), 
+                  nudge_x = 0.1, 
+                  nudge_y = 0.1, 
+                  size = 4) +  # Add labels to arrows
+        geom_circle(aes(x0 = 0, y0 = 0, r = 1), 
+                    fill = NA, color = "grey",
+                    linetype = "dashed") +  # Add circles
+        facet_wrap(~ ETHNICITY, ncol = 2) +
+        scale_color_manual(values = c("black", "darkgrey",
+                                "darkgrey", "black", "darkgrey",
+                                "black", "black",
+                                "darkgrey")) +  # Specify color scale
+        scale_linetype_manual(values = c("solid", "dashed",
+                                         "dashed", "solid",
+                                         "dashed", "solid",
+                                         "solid", 
+                                         "dashed")) + 
+        # Specify linetype scale
+        labs(x = "PC1", y = "PC2", color = "PAQ", linetype = "PAQ") +
+        xlim(c(-1.2,1.2)) + ylim(c(-1.2,1.2))+
+        theme_minimal() + theme(legend.position = "none",
+                                text = element_text(size = 16))
+p.pca
+ggsave(paste0("./outputs/PCAprojections_araus.pdf"),
+       plot = p.pca, width = 4200, 
+       height = 4300, units = "px",scale = 1)
+
+```
+
+## Circumplexity Tests
+
+### RTHORR
+
+```{r rthorr}
+
+#RTHORR test
+res.rthorr<-RTHORR::randmf_from_df(
+        df_list = list(cor(data.satp.zsm2.l$data.subj.zsm2 %>%
+                                   dplyr::filter(ETHNICITY=="MY:M") %>%
+                                   dplyr::select(c(eventful,vibrant,
+                                                   pleasant,calm,
+                                                   uneventful,monotonous,
+                                                   annoying,chaotic))),
+                       cor(data.satp.zsm2.l$data.subj.zsm2 %>%
+                                   dplyr::filter(ETHNICITY=="MY:O") %>%
+                                   dplyr::select(c(eventful,vibrant,
+                                                   pleasant,calm,
+                                                   uneventful,monotonous,
+                                                   annoying,chaotic))),
+                       cor(data.satp.zsm2.l$data.subj.zsm2 %>%
+                                   dplyr::filter(ETHNICITY=="SG") %>%
+                                   dplyr::select(c(eventful,vibrant,
+                                                   pleasant,calm,
+                                                   uneventful,monotonous,
+                                                   annoying,chaotic))),
+                       data.araus.cor),
+                       ord = "circular8")
+
+ci.rthorr <- cbind(res.rthorr$RTHOR %>% as.data.frame(),
+                  data.frame(ETHNICITY=c("MY:M","MY:O","SG","ARAUS")))
+#ci.rthorr
+```
+
+```{r ssm}
+
+#SSM circumplex tests
+
+# Multiple-group mean-based SSM
+res.ssm.mean <- ssm_analyze(
+        .data = rbind(data.satp.zsm2.l$data.subj.zsm2 %>%
+                    #dplyr::filter(ETHNICITY=="MY:M") %>%
+                    dplyr::select(c(pleasant:monotonous),
+                                  ISOPL,ISOEV,ETHNICITY) %>%
+                    dplyr::mutate(across(c(pleasant:monotonous),
+                                  function(x) x/100)),
+                    data.araus %>% 
+                            dplyr::select(c(eventful:chaotic,
+                                            ISOPL,ISOEV)) %>%
+                            dplyr::mutate(across(c(eventful:chaotic),
+                                                 function(x) x/5)) %>%
+                            dplyr::mutate(ETHNICITY="ARAUS")), 
+            scales = pleasant:monotonous, 
+            angles = c(0,135,45,270,315,180,90,225),
+            #angles = c(90,315,45,180,135,270,0,225), 
+            grouping = ETHNICITY)
+#ssm_table(res.ssm.mean)
+#summary(res.ssm.mean)
+```
+
+```{r circe}
+
+#CircE: CFI, RMSEA, SRMR
+#equal angle only
+circE.MYM.ea=CircE.BFGS(data.merged.mym.cor,
+                 v.names = rownames(data.merged.mym.cor),
+                 m=2,N=n.participsnts.MY.M,r=1, equal.ang = TRUE)
+circE.MYO.ea=CircE.BFGS(data.merged.myo.cor,
+                 v.names = rownames(data.merged.mym.cor),
+                 m=2,N=n.participsnts.MY.O,r=1, equal.ang = TRUE)
+circE.SG.ea=CircE.BFGS(data.merged.sg.cor,
+                 v.names = rownames(data.merged.mym.cor),
+                 m=2,N=n.participsnts.SG,r=1, equal.ang = TRUE)
+circE.ARAUS.ea=CircE.BFGS(data.araus.cor,
+                 v.names = rownames(data.araus.cor),
+                 m=2,N=29,r=1, equal.ang = TRUE)
+#quasi-circumplex
+circE.MYM.q=CircE.BFGS(data.merged.mym.cor,
+                 v.names = rownames(data.merged.mym.cor),
+                 m=2,N=n.participsnts.MY.M,r=1)
+circE.MYO.q=CircE.BFGS(data.merged.myo.cor,
+                 v.names = rownames(data.merged.myo.cor),
+                 m=2,N=n.participsnts.MY.O,r=1)
+circE.SG.q=CircE.BFGS(data.merged.sg.cor,
+                 v.names = rownames(data.merged.sg.cor),
+                 m=2,N=n.participsnts.SG,r=1)
+circE.ARAUS.q=CircE.BFGS(data.araus.cor,
+                 v.names = rownames(data.araus.cor),
+                 m=2,N=29,r=1)
+
+#equal comm only
+circE.MYM.ec=CircE.BFGS(data.merged.mym.cor,
+                 v.names = rownames(data.merged.mym.cor),
+                 m=2,N=n.participsnts.MY.M,r=1,equal.com = TRUE)
+circE.MYO.ec=CircE.BFGS(data.merged.myo.cor,
+                 v.names = rownames(data.merged.myo.cor),
+                 m=2,N=n.participsnts.MY.O,r=1,equal.com = TRUE)
+circE.SG.ec=CircE.BFGS(data.merged.sg.cor,
+                 v.names = rownames(data.merged.sg.cor),
+                 m=2,N=n.participsnts.SG,r=1,equal.com = TRUE)
+circE.ARAUS.ec=CircE.BFGS(data.araus.cor,
+                 v.names = rownames(data.araus.cor),
+                 m=2,N=29,r=1,equal.com = TRUE)
+
+#equal comm and angles
+circE.MYM.eca=CircE.BFGS(data.merged.mym.cor,
+                 v.names = rownames(data.merged.mym.cor),
+                 m=2,N=n.participsnts.MY.M,r=1,
+                 equal.com = TRUE, equal.ang = TRUE)
+circE.MYO.eca=CircE.BFGS(data.merged.myo.cor,
+                 v.names = rownames(data.merged.myo.cor),
+                 m=2,N=n.participsnts.MY.O,r=1,
+                 equal.com = TRUE, equal.ang = TRUE)
+circE.SG.eca=CircE.BFGS(data.merged.sg.cor,
+                 v.names = rownames(data.merged.sg.cor),
+                 m=2,N=n.participsnts.SG,r=1,
+                 equal.com = TRUE, equal.ang = TRUE)
+circE.ARAUS.eca=CircE.BFGS(data.araus.cor,
+                 v.names = rownames(data.araus.cor),
+                 m=2,N=29,r=1,
+                 equal.com = TRUE, equal.ang = TRUE)
+```
+
+```{r circumplexplots}
+
+#table of model fitting parameters
+ssm.circE.all<-rbind(
+        cbind(circE.MYM.q$CFI, circE.MYO.q$CFI,
+              circE.SG.q$CFI, circE.ARAUS.q$CFI),
+        cbind(circE.MYM.q$RMSEA, circE.MYO.q$RMSEA,
+              circE.SG.q$RMSEA, circE.ARAUS.q$RMSEA),
+        cbind(circE.MYM.q$SRMR, circE.MYO.q$SRMR,
+              circE.SG.q$SRMR, circE.ARAUS.q$SRMR),
+        cbind(circE.MYM.ea$CFI, circE.MYO.ea$CFI,
+              circE.SG.ea$CFI, circE.ARAUS.ea$CFI),
+        cbind(circE.MYM.ea$RMSEA, circE.MYO.ea$RMSEA,
+              circE.SG.ea$RMSEA, circE.ARAUS.ea$RMSEA),
+        cbind(circE.MYM.ea$SRMR, circE.MYO.ea$SRMR,
+              circE.SG.ea$SRMR, circE.ARAUS.ea$SRMR),
+        cbind(circE.MYM.ec$CFI, circE.MYO.ec$CFI, 
+              circE.SG.ec$CFI, circE.ARAUS.ec$CFI),
+        cbind(circE.MYM.ec$RMSEA, circE.MYO.ec$RMSEA,
+              circE.SG.ec$RMSEA, circE.ARAUS.ec$RMSEA),
+        cbind(circE.MYM.ec$SRMR, circE.MYO.ec$SRMR, 
+              circE.SG.ec$SRMR, circE.ARAUS.ec$SRMR),
+        cbind(circE.MYM.eca$CFI, circE.MYO.eca$CFI,
+              circE.SG.eca$CFI, circE.ARAUS.eca$CFI),
+        cbind(circE.MYM.eca$RMSEA, circE.MYO.eca$RMSEA,
+              circE.SG.eca$RMSEA, circE.ARAUS.eca$RMSEA),
+        cbind(circE.MYM.eca$SRMR, circE.MYO.eca$SRMR,
+              circE.SG.eca$SRMR, circE.ARAUS.eca$SRMR),
+        c(round(res.ssm.mean$results$fit_est,3)[-1],
+                          round(res.ssm.mean$results$fit_est,3)[1])) %>%
+        as.data.frame(.) %>%
+        dplyr::mutate_all(function(x) format(x, nsmall=3)) %>% #format to 3 dec pl
+        `colnames<-`(c("MY:M","MY:O","SG","ARAUS")) %>%
+        `rownames<-`(c("CFIq","RMSEAq","SRMRq",
+                       "CFIea","RMSEAea","SRMRea",
+                       "CFIec","RMSEAec","SRMRec",
+                       "CFIeca","RMSEAeca","SRMReca",
+                       "SSM"))
+        
+models.table.new <- ci.rthorr %>% 
+        dplyr::mutate(CIp=paste0(round(CI,3)," (",round(p,3),")")) %>%
+        dplyr::select(CIp,ETHNICITY) %>%
+        pivot_wider(names_from = ETHNICITY,values_from = CIp) %>%
+        as.data.frame(.) %>%
+        `rownames<-`(c("CI (p)")) %>%
+        rbind(.,ssm.circE.all) %>%
+        cbind(c("","\\ge0.90","\\ge0.13","< 0.06",
+                "\\ge0.90","\\ge0.13","< 0.06",
+                "\\ge0.90","\\ge0.13","< 0.06",
+                "\\ge0.90","\\ge0.13","< 0.06","> 0.7"),.) %>%
+        `colnames<-`(c("","MY:M","MY:O","SG","ARAUS")) %>%
+        kableExtra::kbl(booktabs = T, linesep = "",
+                        #format = "latex",
+                        format = "html",
+                        label = "modelfitnew",
+                        caption = "Summary of model fitting indexes") %>%
+        #kable_styling(latex_table_env = "tabularx") %>%
+        kable_styling(protect_latex = TRUE) %>%
+        kable_paper(full_width = T) #%>%
+        #save_kable(paste0(getwd(),"/Table tex files/modelfitnew2.tex"))
+models.table.new
+```
